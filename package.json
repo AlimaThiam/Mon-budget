@@ -1,0 +1,8 @@
+{
+  "name": "mon-budget",
+  "private": true,
+  "description": "Application web gratuite pour gérer son budget.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
