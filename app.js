@@ -76,7 +76,7 @@
         emit();
         if (!write(data)) setStatus("Attention : ce navigateur ne peut pas enregistrer tes données (navigation privée ?). Elles seront perdues à la fermeture.", "warn");
       },
-      async addTx(t) { const id = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); commit({ ...data, txs: { ...(data.txs || {}), [id]: t } }); },
+      async addTx(t) { commit({ ...data, txs: { ...(data.txs || {}), [newTxId()]: t } }); },
       async delTx(id) { const txs = { ...(data.txs || {}) }; delete txs[id]; commit({ ...data, txs }); },
       async updateTx(id, t) { commit({ ...data, txs: { ...(data.txs || {}), [id]: strip(t) } }); },
       async saveSettings(s) { commit({ ...data, settings: s }); },
@@ -90,10 +90,76 @@
     return o;
   };
 
+  const newTxId = () => "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+  // Online account (sync.js gives `api`, a thin layer over Firestore). Writes are not awaited:
+  // Firestore applies them to its offline cache at once and sends them when the connection is back.
+  function cloudStore(api) {
+    let stops = [];
+    const failed = () => setStatus("Une modification n'a pas pu être synchronisée. Vérifie ta connexion puis recharge la page.", "warn");
+    const send = (p) => { p.catch(failed); };
+    let pendingTx = false, pendingSettings = false, offline = false;
+    const sync = () => setStatus(offline || pendingTx || pendingSettings
+      ? "Modifications gardées sur cet appareil : elles seront synchronisées dès que tu auras internet."
+      : "Synchronisé avec ton compte : tes données sont sur tous tes appareils.");
+    return {
+      start() {
+        stops = [
+          api.onTxs((txs, meta) => {
+            state.txs = txs;
+            pendingTx = meta.pending; offline = meta.fromCache;
+            sync(); render();
+          }, () => setStatus("Lecture de tes opérations interrompue. Recharge la page.", "warn")),
+          api.onSettings((s, meta) => {
+            if (s && Array.isArray(s.categories)) {
+              state.settings = s;
+              if (!state.navigated && !state.editing) { state.month = periodOf(today()); $("fDate").value = defaultDate(state.month); }
+            }
+            pendingSettings = meta.pending;
+            sync(); render();
+          }, () => setStatus("Lecture de tes réglages interrompue. Recharge la page.", "warn")),
+        ];
+      },
+      stop() { stops.forEach((f) => f()); stops = []; },
+      async addTx(t) { send(api.setTx(newTxId(), strip(t))); },
+      async delTx(id) { send(api.delTx(id)); },
+      async updateTx(id, t) { send(api.setTx(id, strip(t))); },
+      async saveSettings(s) { send(api.setSettings(s)); },
+      async replaceAll(txs, settings) { await api.replaceAll(txs.map((t) => ({ id: t.id, ...strip(t) })), settings); },
+    };
+  }
+
+  const LOCAL_STATUS = "Tes données restent sur cet appareil. Pense à faire une sauvegarde de temps en temps.";
+  function useStore(next, mode) {
+    store?.stop?.();
+    state.txs = [];
+    state.settings = { currency: "XOF", categories: DEFAULT_CATS };
+    state.navigated = false;
+    if (state.editing) stopEdit();
+    state.mode = mode;
+    store = next;
+    store.start();
+    render();
+  }
+
+  // Used by sync.js (loaded as a module, after this file).
+  window.MonBudget = {
+    useCloud(api) { useStore(cloudStore(api), "cloud"); },
+    useLocal(status) { useStore(localStore(), "local"); setStatus(status || LOCAL_STATUS); },
+    // What this device holds without an account, to send it to the account on first sign-in.
+    readLocal() {
+      let d = {};
+      try { d = JSON.parse(localStorage.getItem(LOCAL_KEY)) || {}; } catch { d = {}; }
+      return { txs: Object.entries(d.txs || {}).map(([id, t]) => ({ id, ...strip(t) })), settings: d.settings || null };
+    },
+    clearLocal() { try { localStorage.removeItem(LOCAL_KEY); } catch {} },
+    setStatus,
+  };
+
   function init() {
     state.mode = "local";
     store = localStore();
-    setStatus("Tes données restent sur cet appareil. Pense à faire une sauvegarde de temps en temps.");
+    setStatus(LOCAL_STATUS);
     store.start();
   }
 
@@ -150,7 +216,8 @@
   function renderBackupNudge() {
     const now = Date.now();
     const firstUse = state.txs.reduce((m, t) => (t.createdAt && t.createdAt < m ? t.createdAt : m), Infinity);
-    const due = Calc.backupDue({ txCount: state.txs.length, lastBackup: state.settings.lastBackup, firstUse: Number.isFinite(firstUse) ? firstUse : 0, now })
+    // With an account the data is already kept online.
+    const due = state.mode !== "cloud" && Calc.backupDue({ txCount: state.txs.length, lastBackup: state.settings.lastBackup, firstUse: Number.isFinite(firstUse) ? firstUse : 0, now })
       && !(Number(state.settings.backupSnooze) > now);
     const box = $("backupNudge");
     box.hidden = !due;

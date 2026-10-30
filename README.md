@@ -10,11 +10,19 @@ Application web gratuite pour gérer son budget : argent du mois, dépenses, dé
 - Marche sans connexion une fois ouverte une première fois.
 - Le mois peut commencer le jour de la paie, et ce qui reste peut être reporté sur le mois suivant.
 - Montants en franc CFA par défaut (euro, dirham, dollar… au choix).
-- Pas de compte : les données de chaque personne restent sur son propre appareil (stockage du navigateur).
+- **Compte gratuit (e-mail ou Google)** pour retrouver ses données sur tous ses appareils. Sans compte, les données restent sur l'appareil.
 
-## Sauvegardes
+## Comptes et synchronisation
 
-Comme il n'y a pas de serveur, les données ne sont que sur l'appareil. Pour ne pas les perdre :
+Avec un compte, les données sont gardées en ligne (Firebase) : on se connecte sur un autre téléphone et tout réapparaît. L'appli continue de marcher sans internet et envoie les changements dès que la connexion revient. Chaque personne ne voit que son propre budget.
+
+Ce qui a été noté avant de créer le compte est ajouté au compte à la première connexion.
+
+Pour activer les comptes, suis le guide [docs/FIREBASE.md](docs/FIREBASE.md) (environ 10 minutes, gratuit). Tant que `firebase-config.js` est vide, l'appli fonctionne sans compte.
+
+## Sauvegardes sans compte
+
+Sans compte, les données ne sont que sur l'appareil. Pour ne pas les perdre :
 
 - Bouton **« Sauvegarder (JSON) »** dans « Catégories et réglages ».
   - **Sur téléphone**, il ouvre le menu de partage : choisis Google Drive, WhatsApp (à toi-même) ou ton e-mail pour garder le fichier hors du téléphone.
@@ -27,6 +35,8 @@ Comme il n'y a pas de serveur, les données ne sont que sur l'appareil. Pour ne 
 - `index.html` : la page.
 - `style.css` : l'apparence.
 - `app.js` : l'affichage et les actions.
+- `sync.js` : comptes et synchronisation (Firebase), actifs seulement si `firebase-config.js` est rempli.
+- `firebase-config.js` : identifiants du projet Firebase ; `firestore.rules` : règles de sécurité de la base.
 - `calc.js` : les calculs (périodes, totaux, report, rappel de sauvegarde), sans lien avec la page, pour pouvoir les tester.
 - `tests/` : tests des calculs.
 - `manifest.json` : nom, couleurs et icônes pour l'installation sur téléphone.
@@ -61,4 +71,4 @@ npm test
 
 ## Après une mise à jour
 
-Changer `VERSION` dans `sw.js` (par exemple `mon-budget-v4`) pour que les téléphones récupèrent la nouvelle version.
+Changer `VERSION` dans `sw.js` (par exemple `mon-budget-v5`) pour que les téléphones récupèrent la nouvelle version.

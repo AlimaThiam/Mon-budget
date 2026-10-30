@@ -1,6 +1,6 @@
 // Mon Budget: works offline. Bump VERSION after each update so phones fetch the new files.
-const VERSION = "mon-budget-v3";
-const CORE = ["./", "index.html", "style.css", "calc.js", "app.js", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "mon-budget-v4";
+const CORE = ["./", "index.html", "style.css", "calc.js", "app.js", "sync.js", "firebase-config.js", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -18,8 +18,8 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(fetch(e.request).then((r) => { const copy = r.clone(); caches.open(VERSION).then((c) => c.put("index.html", copy)); return r; }).catch(() => caches.match("index.html")));
     return;
   }
-  // Same-site files and Google Fonts: cache first, refresh in the background.
-  if (url.origin === location.origin || url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com")) {
+  // Same-site files, Google Fonts and the Firebase library: cache first, refresh in the background.
+  if (url.origin === location.origin || url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com") || url.href.startsWith("https://www.gstatic.com/firebasejs/")) {
     e.respondWith(caches.match(e.request).then((hit) => {
       const net = fetch(e.request).then((r) => { if (r.ok || r.type === "opaque") { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); } return r; }).catch(() => hit);
       return hit || net;

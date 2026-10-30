@@ -59,6 +59,29 @@ img { max-width: 100%; }
     </div>
   </div>
 
+  <details class="panel account" id="syncBox" hidden>
+    <summary id="aSummary">Retrouver mes données sur tous mes appareils</summary>
+    <div id="aOut">
+      <p class="hint">Crée un compte gratuit : tes données sont gardées en ligne et tu les retrouves sur n'importe quel téléphone ou ordinateur en te connectant. Ce que tu as déjà noté sur cet appareil est ajouté à ton compte.</p>
+      <form id="aForm" class="form" novalidate>
+        <div class="field"><label for="aEmail">E-mail</label><input id="aEmail" type="email" autocomplete="email" placeholder="ton.adresse@exemple.com"></div>
+        <div class="field"><label for="aPass">Mot de passe</label><input id="aPass" type="password" autocomplete="current-password" placeholder="6 caractères minimum"></div>
+        <div class="field wide account-actions">
+          <button class="primary" type="submit">Se connecter</button>
+          <button class="ghost" type="button" id="aSignup">Créer un compte</button>
+          <button class="ghost" type="button" id="aReset">Mot de passe oublié</button>
+        </div>
+      </form>
+      <div class="account-or"><span>ou</span></div>
+      <button class="ghost google" type="button" id="aGoogle">Continuer avec Google</button>
+    </div>
+    <div id="aIn" hidden>
+      <p class="hint">Connecté avec <b id="aWho"></b>. Tes données sont synchronisées sur tous les appareils où tu te connectes, même si tu changes de téléphone.</p>
+      <button class="ghost" type="button" id="aLogout">Se déconnecter</button>
+    </div>
+    <p class="hint" id="aMsg" role="status"></p>
+  </details>
+
   <section class="start" id="startPanel" aria-labelledby="startTitle">
     <div id="startEmpty">
       <p class="eyebrow">Étape 1</p>
@@ -223,6 +246,7 @@ img { max-width: 100%; }
 
 <script src="calc.js"></script>
 <script src="app.js"></script>
+<script type="module" src="sync.js"></script>
 
 <script>
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
