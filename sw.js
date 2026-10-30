@@ -1,5 +1,5 @@
 // Mon Budget: works offline. Bump VERSION after each update so phones fetch the new files.
-const VERSION = "mon-budget-v4";
+const VERSION = "mon-budget-v5";
 const CORE = ["./", "index.html", "style.css", "calc.js", "app.js", "sync.js", "firebase-config.js", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

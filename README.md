@@ -71,4 +71,4 @@ npm test
 
 ## Après une mise à jour
 
-Changer `VERSION` dans `sw.js` (par exemple `mon-budget-v5`) pour que les téléphones récupèrent la nouvelle version.
+Changer `VERSION` dans `sw.js` (par exemple `mon-budget-v6`) pour que les téléphones récupèrent la nouvelle version.
