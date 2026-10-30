@@ -1,5 +1,5 @@
 // Mon Budget: works offline. Bump VERSION after each update so phones fetch the new files.
-const VERSION = "mon-budget-v1";
+const VERSION = "mon-budget-v2";
 const CORE = ["./", "index.html", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

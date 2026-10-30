@@ -477,8 +477,9 @@ details[open] summary::after { content: "−"; }
   };
   const setStatus = (text, kind) => { const el = $("status"); el.textContent = text; el.dataset.kind = kind || ""; };
 
-  // ---------- storage: shared db when available, browser storage otherwise ----------
+  // ---------- storage: browser storage on this device ----------
   let store = null;
+  const SAVE_FAILED = "la mémoire du navigateur est pleine ou bloquée (navigation privée ?). Fais une sauvegarde JSON.";
 
   function localStore() {
     const read = () => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || {}; } catch { return {}; } };
@@ -489,46 +490,22 @@ details[open] summary::after { content: "−"; }
       if (data.settings) { state.settings = data.settings; if (!state.navigated) state.month = periodOf(today()); }
       render();
     };
-    return {
-      start() { emit(); },
-      async addTx(t) { const id = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); data.txs = { ...(data.txs || {}), [id]: t }; write(data); emit(); },
-      async delTx(id) { const txs = { ...(data.txs || {}) }; delete txs[id]; data.txs = txs; write(data); emit(); },
-      async updateTx(id, t) { data.txs = { ...(data.txs || {}), [id]: strip(t) }; write(data); emit(); },
-      async saveSettings(s) { data.settings = s; write(data); emit(); },
-      async replaceAll(txs, settings) { data = { txs: Object.fromEntries(txs.map((t) => [t.id, strip(t)])), settings }; write(data); emit(); },
+    // Keep the change only once it is really written, so nothing vanishes on reload.
+    const commit = (next) => {
+      if (!write(next)) { setStatus("Tes dernières modifications n'ont pas pu être enregistrées : " + SAVE_FAILED, "warn"); throw new Error(SAVE_FAILED); }
+      data = next;
+      emit();
     };
-  }
-
-  function dbStore(db) {
-    const txCol = db.collection("transactions");
-    const settingsDoc = db.doc("settings/main");
     return {
       start() {
-        let gotTx = false, gotSettings = false;
-        const timer = setTimeout(() => setStatus("Impossible de joindre tes données pour l'instant. Vérifie ta connexion.", "warn"), 10000);
-        const done = () => { if (gotTx && gotSettings) { clearTimeout(timer); setStatus("Données enregistrées dans ton espace privé, sur tous tes appareils."); } };
-        txCol.onSnapshot((snap) => {
-          state.txs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          if (!snap.metadata.fromCache) { gotTx = true; done(); }
-          render();
-        }, () => { clearTimeout(timer); setStatus("Lecture des opérations interrompue. Recharge la page.", "warn"); });
-        settingsDoc.onSnapshot((snap) => {
-          if (snap.exists && Array.isArray(snap.data().categories)) {
-            state.settings = snap.data();
-            if (!state.navigated && !state.editing) { state.month = periodOf(today()); $("fDate").value = defaultDate(state.month); }
-          }
-          if (!snap.metadata.fromCache) { gotSettings = true; done(); }
-          render();
-        }, () => { clearTimeout(timer); setStatus("Lecture des réglages interrompue. Recharge la page.", "warn"); });
+        emit();
+        if (!write(data)) setStatus("Attention : ce navigateur ne peut pas enregistrer tes données (navigation privée ?). Elles seront perdues à la fermeture.", "warn");
       },
-      async addTx(t) { await txCol.doc().set(t); },
-      async delTx(id) { await txCol.doc(id).delete(); },
-      async updateTx(id, t) { await txCol.doc(id).set(strip(t)); },
-      async saveSettings(s) { await settingsDoc.set(s); },
-      async replaceAll(txs, settings) {
-        await settingsDoc.set(settings);
-        for (const t of txs) await txCol.doc(t.id).set(strip(t));
-      },
+      async addTx(t) { const id = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); commit({ ...data, txs: { ...(data.txs || {}), [id]: t } }); },
+      async delTx(id) { const txs = { ...(data.txs || {}) }; delete txs[id]; commit({ ...data, txs }); },
+      async updateTx(id, t) { commit({ ...data, txs: { ...(data.txs || {}), [id]: strip(t) } }); },
+      async saveSettings(s) { commit({ ...data, settings: s }); },
+      async replaceAll(txs, settings) { commit({ txs: Object.fromEntries(txs.map((t) => [t.id, strip(t)])), settings }); },
     };
   }
 
@@ -538,18 +515,10 @@ details[open] summary::after { content: "−"; }
     return o;
   };
 
-  async function init() {
-    render();
-    let db = null;
-    try { db = window.claude?.use ? await window.claude.use("db") : null; } catch { db = null; }
-    if (db) {
-      state.mode = "db";
-      store = dbStore(db);
-    } else {
-      state.mode = "local";
-      store = localStore();
-      setStatus("Tes données restent sur cet appareil. Pense à faire une sauvegarde de temps en temps.");
-    }
+  function init() {
+    state.mode = "local";
+    store = localStore();
+    setStatus("Tes données restent sur cet appareil. Pense à faire une sauvegarde de temps en temps.");
     store.start();
   }
 
@@ -884,10 +853,15 @@ details[open] summary::after { content: "−"; }
 
   // ---------- actions ----------
   async function saveSettings(next) {
+    const prev = state.settings;
     state.settings = next;
     render();
     try { await store.saveSettings(next); }
-    catch (e) { $("toolsMsg").textContent = "Enregistrement impossible : " + (e?.message || "réessaie plus tard."); }
+    catch (e) {
+      state.settings = prev;
+      render();
+      $("toolsMsg").textContent = "Enregistrement impossible : " + (e?.message || "réessaie plus tard.");
+    }
   }
 
   function setType(type) {
@@ -1107,21 +1081,14 @@ details[open] summary::after { content: "−"; }
   $("currency").addEventListener("change", (e) => saveSettings({ ...state.settings, currency: e.target.value }));
 
   // ---------- export / import ----------
-  async function offer(filename, data) {
+  function offer(filename, data) {
     const msg = $("toolsMsg");
-    let dl = null;
-    try { dl = window.claude?.use ? await window.claude.use("downloads") : null; } catch { dl = null; }
-    if (!dl) {
-      try {
-        const url = URL.createObjectURL(new Blob([data], { type: filename.endsWith(".csv") ? "text/csv" : "application/json" }));
-        const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        msg.textContent = "Fichier enregistré : " + filename;
-      } catch { msg.textContent = "Le téléchargement n'est pas disponible ici."; }
-      return;
-    }
-    try { await dl.save({ filename, data }); msg.textContent = "Fichier enregistré : " + filename; }
-    catch (e) { msg.textContent = e?.code === "declined" ? "Téléchargement annulé." : "Téléchargement impossible pour le moment."; }
+    try {
+      const url = URL.createObjectURL(new Blob([data], { type: filename.endsWith(".csv") ? "text/csv" : "application/json" }));
+      const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      msg.textContent = "Fichier enregistré : " + filename;
+    } catch { msg.textContent = "Le téléchargement n'est pas disponible ici."; }
   }
   $("exportCsv").addEventListener("click", () => {
     const q = (s) => '"' + String(s ?? "").replace(/"/g, '""') + '"';
@@ -1139,16 +1106,21 @@ details[open] summary::after { content: "−"; }
     e.target.value = "";
     if (!file || !store) return;
     const msg = $("toolsMsg");
+    let data, txs;
     try {
-      const data = JSON.parse(await file.text());
+      data = JSON.parse(await file.text());
       if (!Array.isArray(data.transactions) || !data.settings || !Array.isArray(data.settings.categories)) throw new Error("format");
-      const txs = data.transactions.filter((t) => t && typeof t.id === "string" && /^[A-Za-z0-9_\-.~:@+]{1,100}$/.test(t.id) && Number(t.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.date))
+      txs = data.transactions.filter((t) => t && typeof t.id === "string" && /^[A-Za-z0-9_\-.~:@+]{1,100}$/.test(t.id) && Number(t.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.date))
         .map((t) => ({ ...t, amount: Number(t.amount), type: ["in", "save"].includes(t.type) ? t.type : "out" }));
-      msg.textContent = "Import en cours…";
-      await store.replaceAll(txs, data.settings);
-      msg.textContent = txs.length + " opération(s) importée(s).";
     } catch {
       msg.textContent = "Ce fichier n'est pas une sauvegarde Mon Budget valide.";
+      return;
+    }
+    try {
+      await store.replaceAll(txs, data.settings);
+      msg.textContent = txs.length + " opération(s) importée(s). Elles remplacent les données précédentes.";
+    } catch (err) {
+      msg.textContent = "Import impossible : " + (err?.message || "réessaie.");
     }
   });
 
